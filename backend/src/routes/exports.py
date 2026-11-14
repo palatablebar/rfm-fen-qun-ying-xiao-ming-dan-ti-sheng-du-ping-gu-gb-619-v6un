@@ -37,3 +37,13 @@ def audiences_csv(
     principal: dict = Depends(require_roles(*EXPORT_ROLES)),
 ):
     return export_controller.audiences_csv(db, audience_id, principal, request)
+
+
+@router.get("/evaluations.csv")
+def evaluations_csv(
+    request: Request,
+    campaign_id: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+    principal: dict = Depends(require_roles(*EXPORT_ROLES)),
+):
+    return export_controller.evaluations_csv(db, campaign_id, principal, request)

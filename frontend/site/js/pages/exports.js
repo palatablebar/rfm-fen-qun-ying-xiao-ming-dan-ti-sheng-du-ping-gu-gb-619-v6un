@@ -37,6 +37,13 @@ const EXPORTS = [
     title: '名单明细（推券平台用）',
     hint: '按名单的分群配额展开到会员级，带该群 lift / 预算 / 预计增量，便于回算',
   },
+  {
+    id: 'evaluations',
+    path: '/api/exports/evaluations.csv',
+    filename: 'evaluations.csv',
+    title: '结算评估（同口径对照组）',
+    hint: '处理人数 / 对照人数 / 增量率 / ROI 与页面共用同一份口径；含处理组与对照组核销率、批次与发布信息',
+  },
 ];
 
 export const exportsPage = {

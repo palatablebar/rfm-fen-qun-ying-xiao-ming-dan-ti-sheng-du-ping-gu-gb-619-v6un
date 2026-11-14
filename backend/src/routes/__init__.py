@@ -6,6 +6,7 @@ from src.routes.audit import router as audit_router
 from src.routes.auth import router as auth_router
 from src.routes.campaigns import router as campaigns_router
 from src.routes.exports import router as exports_router
+from src.routes.evaluations import router as evaluations_router
 from src.routes.health import router as health_router
 from src.routes.members import router as members_router
 from src.routes.overview import router as overview_router
@@ -20,4 +21,5 @@ api_router.include_router(segments_router)
 api_router.include_router(campaigns_router)
 api_router.include_router(audiences_router)
 api_router.include_router(exports_router)
+api_router.include_router(evaluations_router)
 api_router.include_router(audit_router)

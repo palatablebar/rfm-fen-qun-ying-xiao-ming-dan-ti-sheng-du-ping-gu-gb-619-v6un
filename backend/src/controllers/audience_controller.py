@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from src.services import audit_service, audience_service
+from src.services import audit_service, audience_service, evaluation_service
 
 
 def list_audiences(db: Session, **filters) -> dict:
@@ -14,7 +14,9 @@ def list_audiences(db: Session, **filters) -> dict:
 def get_audience(db: Session, audience_id: int) -> dict:
     audience = audience_service.get_audience(db, audience_id)
     campaign = audience_service.get_campaign(db, audience.campaign_id)
-    return audience_service.serialize_audience(audience, campaign)
+    evaluation = evaluation_service.get_by_audience(db, audience.id)
+    payload = evaluation_service.serialize(evaluation, audience, campaign) if evaluation else None
+    return audience_service.serialize_audience(audience, campaign, payload)
 
 
 def generate(db: Session, payload: dict, principal: dict, request: Request) -> dict:
@@ -55,6 +57,7 @@ def review(db: Session, audience_id: int, payload: dict, principal: dict, reques
         status=payload["status"],
         note=payload.get("note"),
         actor=principal["email"],
+        control_ratio=payload.get("control_ratio"),
     )
     audit_service.record(
         db,
@@ -68,4 +71,6 @@ def review(db: Session, audience_id: int, payload: dict, principal: dict, reques
     )
     db.commit()
     campaign = audience_service.get_campaign(db, audience.campaign_id)
-    return audience_service.serialize_audience(audience, campaign)
+    evaluation = evaluation_service.get_by_audience(db, audience.id)
+    payload = evaluation_service.serialize(evaluation, audience, campaign) if evaluation else None
+    return audience_service.serialize_audience(audience, campaign, payload)

@@ -13,8 +13,10 @@ from src.constants.enums import (
 from src.constants.limits import MAX_EXPORT_ROWS
 from src.models.audience import Audience
 from src.models.campaign import Campaign
+from src.models.evaluation import Evaluation
 from src.models.member import Member
 from src.models.segment import Segment
+from src.services import evaluation_service
 from src.utils.csv_export import to_csv
 
 
@@ -85,10 +87,15 @@ def audience_csv(db: Session, audience_id: int | None = None) -> bytes:
         "该群预计增量单量", "该群ROI",
     ]
     payload: list[list] = []
+    control_cache: dict[int, set[int]] = {}
     for audience in audiences:
         campaign = campaigns.get(audience.campaign_id)
         campaign_name = campaign.name if campaign else ""
         status_label = AUDIENCE_STATUS_LABELS.get(audience.status, audience.status)
+        # 已冻结的对照组不进入券平台名单：他们必须真的没被触达，评估才成立
+        if audience.id not in control_cache:
+            control_cache[audience.id] = evaluation_service.frozen_control_ids(db, audience.id)
+        control_ids = control_cache[audience.id]
         for row in audience.allocation or []:
             if row.get("status") != "allocated" or not row.get("allocated"):
                 continue
@@ -98,6 +105,7 @@ def audience_csv(db: Session, audience_id: int | None = None) -> bytes:
                 .order_by(Member.composite_score.desc().nullslast(), Member.id)
                 .limit(int(row["allocated"]))
             ).all()
+            members = [member for member in members if member.id not in control_ids]
             for member in members:
                 payload.append(
                     [
@@ -131,4 +139,45 @@ def campaigns_csv(db: Session) -> bytes:
         ]
         for item in rows
     ]
+    return to_csv(headers, payload)
+
+
+def evaluations_csv(db: Session, campaign_id: int | None = None) -> bytes:
+    """结算评估表：处理人数 / 对照人数 / 增量率 / ROI 与页面共用同一份 serialize。"""
+    stmt = select(Evaluation).order_by(Evaluation.id.desc())
+    if campaign_id:
+        stmt = select(Evaluation).where(Evaluation.campaign_id == campaign_id).order_by(Evaluation.id.desc())
+    rows = db.scalars(stmt).all()
+    audiences = {item.id: item for item in db.scalars(select(Audience)).all()}
+    campaigns = {item.id: item for item in db.scalars(select(Campaign)).all()}
+    headers = [
+        "名单号", "活动", "评估状态", "处理人数", "对照人数", "增量率", "ROI",
+        "处理组核销人数", "对照组核销人数", "处理组转化率", "对照组自然转化率",
+        "增量单量", "增量 GMV", "名单实花", "结算批次", "数据截止", "发布人", "发布时间",
+    ]
+    payload = []
+    for item in rows:
+        data = evaluation_service.serialize(item, audiences.get(item.audience_id), campaigns.get(item.campaign_id))
+        payload.append(
+            [
+                data["audience_no"] or "",
+                data["campaign_name"] or "",
+                data["status_label"],
+                data["treated_count"],
+                data["control_count"],
+                f"{data['incremental_rate'] * 100:.2f}%",
+                f"{data['roi']:.2f}",
+                data["treated_redeemers"],
+                data["control_redeemers"],
+                f"{data['treated_rate'] * 100:.2f}%",
+                f"{data['control_rate'] * 100:.2f}%",
+                data["inc_orders"],
+                f"{data['inc_gmv']:.2f}",
+                f"{data['spend']:.2f}",
+                data["batch_no"] or "",
+                data["data_as_of"] or "",
+                data["published_by"] or "",
+                (data["published_at"] or "")[:16].replace("T", " "),
+            ]
+        )
     return to_csv(headers, payload)

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from src.constants.enums import AUDIENCE_STATUS_LABELS, CAMPAIGN_STATUS_LABELS
 from src.models.audience import Audience
 from src.models.campaign import Campaign
-from src.services import lift_service, segment_service
+from src.services import evaluation_service, lift_service, segment_service
 from src.utils.errors import AppError, not_found
 from src.utils.timeutil import iso_date, iso_utc, local_now, utcnow
 
@@ -149,7 +149,11 @@ def generate(
     return audience
 
 
-def serialize_audience(audience: Audience, campaign: Campaign | None = None) -> dict:
+def serialize_audience(
+    audience: Audience,
+    campaign: Campaign | None = None,
+    evaluation: dict | None = None,
+) -> dict:
     return {
         "id": audience.id,
         "audience_no": audience.audience_no,
@@ -172,6 +176,8 @@ def serialize_audience(audience: Audience, campaign: Campaign | None = None) -> 
         "confirmed_by": audience.confirmed_by,
         "confirmed_at": iso_utc(audience.confirmed_at),
         "created_at": iso_utc(audience.created_at),
+        # 结算评估摘要（未确认名单时为 None；页面与导出共用同一份数字）
+        "evaluation": evaluation,
     }
 
 
@@ -194,8 +200,16 @@ def list_audiences(
     total = db.scalar(count_stmt) or 0
     rows = db.scalars(stmt.order_by(Audience.id.desc()).limit(limit).offset(offset)).all()
     campaigns = {item.id: item for item in db.scalars(select(Campaign)).all()}
+    audiences_by_id = {row.id: row for row in rows}
+    evaluations = {
+        audience_id: evaluation_service.serialize(row, audiences_by_id.get(audience_id), campaigns.get(row.campaign_id))
+        for audience_id, row in evaluation_service.evaluations_by_audience(db, [row.id for row in rows]).items()
+    }
     return {
-        "items": [serialize_audience(row, campaigns.get(row.campaign_id)) for row in rows],
+        "items": [
+            serialize_audience(row, campaigns.get(row.campaign_id), evaluations.get(row.id))
+            for row in rows
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -209,13 +223,25 @@ def get_audience(db: Session, audience_id: int) -> Audience:
     return audience
 
 
-def confirm(db: Session, audience: Audience, *, status: str, note: str | None, actor: str) -> Audience:
+def confirm(
+    db: Session,
+    audience: Audience,
+    *,
+    status: str,
+    note: str | None,
+    actor: str,
+    control_ratio: float | None = None,
+) -> Audience:
     if status not in {"confirmed", "pushed"}:
         raise AppError("VALIDATION", 422, {"reason": "只能确认或推送名单"})
+    if audience.status == "pushed":
+        raise AppError("VALIDATION", 409, {"reason": "名单已推送券平台，不能回退状态"})
     audience.status = status
     audience.confirmed_by = actor
     audience.confirmed_at = utcnow()
     if note:
         audience.note = note
+    # 确认即冻结同口径对照组：之后分群重算、名单重生成都不影响这份评估
+    evaluation_service.freeze_for_audience(db, audience, control_ratio=control_ratio)
     db.flush()
     return audience

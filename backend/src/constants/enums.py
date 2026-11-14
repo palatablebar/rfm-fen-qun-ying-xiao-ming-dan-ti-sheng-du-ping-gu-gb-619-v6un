@@ -107,6 +107,24 @@ AUDIENCE_STATUS_ORDER: list[str] = [
 ]
 
 
+class EvaluationStatus(StrEnum):
+    """名单结算评估状态：确认名单即冻结对照组，结算发布后锁定。"""
+
+    IN_PROGRESS = "in_progress"
+    PUBLISHED = "published"
+
+
+EVALUATION_STATUS_LABELS: dict[str, str] = {
+    EvaluationStatus.IN_PROGRESS.value: "进行中",
+    EvaluationStatus.PUBLISHED.value: "已发布",
+}
+
+EVALUATION_STATUS_ORDER: list[str] = [
+    EvaluationStatus.IN_PROGRESS.value,
+    EvaluationStatus.PUBLISHED.value,
+]
+
+
 class OrderChannel(StrEnum):
     MINIAPP = "miniapp"
     STORE = "store"

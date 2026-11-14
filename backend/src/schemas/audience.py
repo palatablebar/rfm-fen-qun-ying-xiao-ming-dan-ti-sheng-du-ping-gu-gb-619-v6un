@@ -22,6 +22,7 @@ class AudienceIn(BaseModel):
 class AudienceReviewIn(BaseModel):
     status: Literal["confirmed", "pushed"]
     note: str | None = Field(default=None, max_length=1000)
+    control_ratio: float | None = Field(default=None, gt=0.0, le=1.0)
 
 
 class AllocationQuery(BaseModel):

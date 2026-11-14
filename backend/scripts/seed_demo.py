@@ -1,10 +1,12 @@
-"""幂等 seed：3 账号 / 8,000 会员 / 30,000 订单 / 8 分群 / 2 活动 / 2 份名单。
+"""幂等 seed：3 账号 / 8,000 会员 / 30,000 订单 / 8 分群 / 4 活动 / 4 份名单 / 2 份结算评估。
 
 自然键 upsert：
   users.email / members.member_no / orders.order_no
   segments.code（只更新快照字段，不动运营改过的券面额）
   campaigns.code / audiences.seed_key
   audit_logs.seed_key
+  结算评估走 audiences.seed_key → evaluations.audience_id 唯一约束；导入批次按 (campaign_id, batch_no)
+  幂等，重试导入不新增、不重复应用；已发布评估不会被 seed 改动。
 
 重复执行不新增、不覆盖已确认名单；SEED_SUMMARY 两次逐字一致。
 数量口径（与 batch-plan 的 seed 段对应）：
@@ -12,6 +14,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import random
 from datetime import date, datetime, time, timedelta
 
@@ -24,9 +27,10 @@ from src.models.member import Member
 from src.models.order import Order
 from src.models.segment import Segment
 from src.models.user import User
-from src.services import audience_service, segment_service
+from src.services import audience_service, evaluation_service, segment_service
 from src.constants.limits import RFM_WINDOW_DAYS
 from src.utils.security import hash_password
+from src.utils.timeutil import parse_date
 
 from scripts.demo_config import (
     ARCHETYPES,
@@ -42,6 +46,7 @@ from scripts.demo_config import (
     RANDOM_SEED,
     SEED_ANCHOR,
     SEED_AUDIENCES,
+    SEED_EVALUATIONS,
     SEGMENT_COUPON,
     STORES,
     SURNAMES,
@@ -276,6 +281,91 @@ def ensure_audiences(db) -> int:
     return db.scalar(select(func.count()).select_from(Audience)) or 0
 
 
+def _unit(*parts: object) -> float:
+    """确定性 uniform(0,1)：不依赖 PYTHONHASHSEED，两次 seed 结果一致。"""
+    digest = hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).hexdigest()
+    return int(digest[:12], 16) / 0x1000000000000
+
+
+TREATED_REDEEM_MULT = 2.4
+CONTROL_REDEEM_MULT = 1.2
+
+
+def _settlement_rows(db, evaluation, batch_no: str, as_of: str, quality: float) -> list[dict]:
+    """按冻结的两组生成会员级结算事实。
+
+    处理组：有券，核销概率 = purchase_rate × 2.4；
+    对照组：没有券，只有自然购买，概率 = purchase_rate × 1.2（低于处理组，体现券的增量）。
+    `quality` 是这一批次已回流的比例（晚到批次会补齐剩余部分）。
+    """
+    from src.models.member import Member
+
+    treated = set(int(member_id) for member_id in (evaluation.treated_members or []))
+    control = set(int(member_id) for member_id in (evaluation.control_members or []))
+    members = db.scalars(select(Member).where(Member.id.in_(treated | control))).all()
+    rows = []
+    for member in members:
+        group = "treated" if member.id in treated else "control"
+        base = (member.purchase_rate or 0.0) * (2.4 if group == "treated" else 1.2)
+        probability = min(0.95, base)
+        if _unit("redeem", group, member.member_no, evaluation.campaign_id) >= probability:
+            continue
+        # 这一批是否已回流：同一会员可能在后一批才补齐
+        if _unit("batch", batch_no, member.member_no) >= quality:
+            continue
+        gmv = round((member.avg_ticket or 20.0) * (1.1 + _unit("gmv", batch_no, member.member_no) * 0.5), 2)
+        rows.append(
+            {
+                "member_no": member.member_no,
+                "redeemed": group == "treated",
+                "orders": 1,
+                "gmv": gmv,
+                "as_of": as_of,
+            }
+        )
+    return rows
+
+
+def ensure_evaluations(db) -> dict:
+    """确认两份历史名单 → 冻结对照组 → 导入分批结算 → 一份发布、一份进行中。"""
+    from src.models.audience import Audience
+    from src.models.evaluation import Evaluation
+
+    audiences = {
+        item.seed_key: item for item in db.scalars(select(Audience)).all() if item.seed_key
+    }
+    campaigns = {item.code: item for item in db.scalars(select(Campaign)).all()}
+    for spec in SEED_EVALUATIONS:
+        campaign = campaigns.get(spec["campaign_code"])
+        audience = audiences.get(spec["audience_seed_key"])
+        if campaign is None or audience is None:
+            continue
+        if audience.status == "pending":
+            audience_service.confirm(
+                db, audience, status="confirmed", note="seed：历史活动已结算，冻结同口径对照组", actor="seed@rfmseg.io"
+            )
+        evaluation = evaluation_service.freeze_for_audience(db, audience)
+        for batch_no, as_of, quality in spec["batches"]:
+            evaluation_service.apply_import(
+                db,
+                campaign_id=campaign.id,
+                batch_no=batch_no,
+                as_of=parse_date(as_of),
+                rows=_settlement_rows(db, evaluation, batch_no, as_of, quality),
+                operator_email="seed@rfmseg.io",
+                seed_key=f"seed-import-{batch_no}",
+            )
+            db.flush()
+        if spec["publish"] and evaluation.status != "published":
+            evaluation_service.publish(db, evaluation, actor="seed@rfmseg.io")
+    db.flush()
+    evaluations = db.scalars(select(Evaluation)).all()
+    return {
+        "total": len(evaluations),
+        "published": sum(1 for item in evaluations if item.status == "published"),
+    }
+
+
 def ensure_audit(db) -> None:
     seeds = [
         ("seed-audit-1", "admin@rfmseg.io", "admin", "segment.recompute", "segment", {"weights": [0.3, 0.3, 0.4]}),
@@ -307,6 +397,7 @@ def seed_all() -> dict:
         segments = ensure_segments(db)
         ensure_campaigns(db)
         ensure_audiences(db)
+        ensure_evaluations(db)
         ensure_audit(db)
         audiences = db.scalar(select(func.count()).select_from(Audience)) or 0
         pending = db.scalar(select(func.count()).select_from(Audience).where(Audience.status == "pending")) or 0

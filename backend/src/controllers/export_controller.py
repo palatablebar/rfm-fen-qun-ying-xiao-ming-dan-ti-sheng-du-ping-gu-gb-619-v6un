@@ -58,3 +58,19 @@ def audiences_csv(db: Session, audience_id: int | None, principal: dict, request
     )
     db.commit()
     return _response(content, "audience.csv")
+
+
+def evaluations_csv(db: Session, campaign_id: int | None, principal: dict, request: Request) -> Response:
+    content = export_service.evaluations_csv(db, campaign_id)
+    audit_service.record(
+        db,
+        actor_email=principal["email"],
+        actor_role=principal["role"],
+        action="export.evaluations",
+        entity="evaluation",
+        entity_id=campaign_id,
+        detail={"bytes": len(content), "campaign_id": campaign_id},
+        ip=request.client.host if request.client else None,
+    )
+    db.commit()
+    return _response(content, "evaluations.csv")

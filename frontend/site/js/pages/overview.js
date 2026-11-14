@@ -67,6 +67,11 @@ export const overviewPage = {
             <dt>名单人数</dt><dd class="mono">${latest ? fmtNum(latest.member_count) : '—'}</dd>
             <dt>预计增量</dt><dd class="mono">${latest ? `${fmtNum(latest.inc_orders)} 单 / ${fmtMoney(latest.inc_gmv, 0)}` : '—'}</dd>
             <dt>预计 ROI</dt><dd class="mono">${latest ? Number(latest.roi).toFixed(2) : '—'}</dd>
+            <dt>已发布评估</dt><dd class="mono">${fmtNum(data.published_evaluations || 0)} 份${
+              data.latest_evaluation
+                ? ` · 增量率 ${fmtPct(data.latest_evaluation.incremental_rate)}`
+                : ''
+            }</dd>
           </div>
           ${
             latest

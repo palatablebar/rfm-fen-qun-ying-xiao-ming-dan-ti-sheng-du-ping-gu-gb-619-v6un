@@ -42,13 +42,14 @@ export const PERMISSIONS = {
   admin: [
     'overview:read', 'member:read', 'order:read', 'segment:read', 'segment:recompute', 'segment:write',
     'campaign:read', 'campaign:write', 'audience:read', 'audience:generate', 'audience:confirm',
+    'evaluation:read', 'evaluation:import', 'evaluation:publish',
     'export:read', 'audit:read',
   ],
   analyst: [
     'overview:read', 'member:read', 'order:read', 'segment:read', 'campaign:read',
-    'audience:read', 'audience:confirm', 'export:read',
+    'audience:read', 'audience:confirm', 'evaluation:read', 'export:read',
   ],
-  viewer: ['overview:read', 'member:read', 'order:read', 'segment:read', 'campaign:read', 'audience:read'],
+  viewer: ['overview:read', 'member:read', 'order:read', 'segment:read', 'campaign:read', 'audience:read', 'evaluation:read'],
 };
 
 export const ENUMS = {
@@ -96,6 +97,14 @@ export const ENUMS = {
     confirmed: '已确认',
     pushed: '已推送券平台',
   },
+  evaluationStatus: {
+    in_progress: '进行中',
+    published: '已发布',
+  },
+  evaluationGroups: {
+    treated: '处理组（已投放）',
+    control: '对照组（同口径未投放）',
+  },
   allocationStatus: {
     allocated: '已分配',
     deferred: '预算不足',
@@ -128,6 +137,10 @@ export function segmentTone(code) {
 
 export function audienceTone(status) {
   return { pending: 'pending warn', confirmed: 'ok', pushed: 'info' }[status] || 'info';
+}
+
+export function evaluationTone(status) {
+  return { published: 'ok', in_progress: 'pending warn' }[status] || 'info';
 }
 
 export function liftTone(lift) {

@@ -86,9 +86,56 @@ CAMPAIGNS: list[dict] = [
         "ends_on": "2026-11-13",
         "note": "覆盖全部可投分群，用于对照「够预算」与「不够预算」两种分配的差异。",
     },
+    # 两份已结算的历史活动：一份已发布（数字锁定），一份仍进行中（可补导晚到批次）
+    {
+        "seed_key": "seed-campaign-midautumn",
+        "code": "midautumn-recall",
+        "name": "中秋老客召回券",
+        "channel": "小程序订阅消息",
+        "budget": 1600.0,
+        "status": "closed",
+        "starts_on": "2026-09-20",
+        "ends_on": "2026-09-26",
+        "note": "已结算并发布：处理组与同口径对照组比对，晚到核销不再改动已发布数字。",
+    },
+    {
+        "seed_key": "seed-campaign-nationalday",
+        "code": "nationalday-return",
+        "name": "国庆回访券",
+        "channel": "门店企微群",
+        "budget": 1800.0,
+        "status": "closed",
+        "starts_on": "2026-10-01",
+        "ends_on": "2026-10-07",
+        "note": "结算进行中：已导入首批核销，晚到批次会更新增量率与 ROI，确认后发布。",
+    },
 ]
 
 SEED_AUDIENCES = [
     ("seed-audience-autumn", "autumn-member-day", "init 抽样名单：预算受限，按 lift/成本 贪心选群"),
     ("seed-audience-double11", "double11-warmup", "init 抽样名单：预算充足，覆盖全部可投分群"),
+    ("seed-audience-midautumn", "midautumn-recall", "init 已确认并结算：已发布评估的数字冻结"),
+    ("seed-audience-nationalday", "nationalday-return", "init 已确认并结算：评估进行中，可补导晚到批次"),
 ]
+
+# 结算评估种子：活动 -> (是否发布, [(批次号, 批次日期, 回流质量)])，deterministic 生成核销事实
+SEED_EVALUATIONS: list[dict] = [
+    {
+        "campaign_code": "midautumn-recall",
+        "audience_seed_key": "seed-audience-midautumn",
+        "publish": True,
+        "batches": [
+            ("MA-20260930", "2026-09-30", 0.72),
+            ("MA-20261008", "2026-10-08", 1.0),
+        ],
+    },
+    {
+        "campaign_code": "nationalday-return",
+        "audience_seed_key": "seed-audience-nationalday",
+        "publish": False,
+        "batches": [
+            ("ND-20261006", "2026-10-06", 0.55),
+        ],
+    },
+]
+

@@ -16,9 +16,11 @@ from src.constants.enums import (
 )
 from src.models.audience import Audience
 from src.models.campaign import Campaign
+from src.models.evaluation import Evaluation
 from src.models.member import Member
 from src.models.order import Order
 from src.models.segment import Segment
+from src.services import evaluation_service
 from src.utils.timeutil import iso_utc, local_now, utcnow
 
 
@@ -73,6 +75,14 @@ def overview(db: Session) -> dict:
     pending_audiences = (
         db.scalar(select(func.count()).select_from(Audience).where(Audience.status == "pending")) or 0
     )
+    published_evaluations = (
+        db.scalar(select(func.count()).select_from(Evaluation).where(Evaluation.status == "published")) or 0
+    )
+    latest_evaluation = None
+    if latest_audience is not None:
+        row = evaluation_service.get_by_audience(db, latest_audience.id)
+        if row is not None:
+            latest_evaluation = evaluation_service.serialize(row, latest_audience)
 
     today = local_now().date()
     trend = []
@@ -115,6 +125,8 @@ def overview(db: Session) -> dict:
         "budget_total": budget_total,
         "audiences_total": audiences_total,
         "pending_audiences": pending_audiences,
+        "published_evaluations": published_evaluations,
+        "latest_evaluation": latest_evaluation,
         "latest_audience": (
             {
                 "id": latest_audience.id,

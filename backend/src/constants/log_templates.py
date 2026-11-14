@@ -10,8 +10,11 @@ ACTIONS: dict[str, str] = {
     "campaign.update": "修改活动预算",
     "audience.generate": "生成营销名单",
     "audience.confirm": "确认名单",
+    "evaluation.import": "导入结算批次",
+    "evaluation.publish": "发布结算评估",
     "export.members": "导出会员名单",
     "export.segments": "导出分群表",
     "export.audiences": "导出名单明细",
+    "export.evaluations": "导出结算评估",
     "http.mutation": "写请求",
 }

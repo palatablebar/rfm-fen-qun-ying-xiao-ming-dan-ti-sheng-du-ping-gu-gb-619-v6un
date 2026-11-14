@@ -21,3 +21,7 @@ DEFAULT_ORDERS_PER_CONVERTER = 1.4   # 每个增量转化会员在活动窗口�
 DEFAULT_CORE_SHARE = 0.6             # 分群内「高响应核心盘」占比
 DEFAULT_TAIL_FACTOR = 0.6            # 超出核心盘部分的边际折减系数
 LIFT_ELIGIBLE_MIN = 1.0              # lift ≤ 1 不投放
+
+# ---- 结算评估（对照组）----
+DEFAULT_CONTROL_RATIO = 0.10         # 对照组占处理组的比例（按分群结构同口径抽取）
+EVALUATION_ORDER_PER_CONVERTER = 1.4  # 无实际订单回流时的兜底人均增量单量

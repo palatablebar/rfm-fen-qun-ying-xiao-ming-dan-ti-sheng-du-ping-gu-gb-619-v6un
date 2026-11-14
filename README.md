@@ -19,22 +19,27 @@
   3. 09:25 运营管理员把权重从 0.3/0.3/0.4 调到 0.6/0.2/0.2，点「重算分群」：分位切点移动，分群人数随之变化，页面直接给出新阈值。
   4. 09:40 在「名单与提升度」选「秋日会员日券」，把预算从 1,400 改成 2,000，试算看到哪几个分群被优先分配、哪几个「预算不足」。
   5. 10:00 点「生成名单」，得到 A2026111401：覆盖 X 人、券预算 Y 元、预计增量 Z 单、整体 ROI R。
-  6. 10:10 数据专员点「确认名单」，管理员在「导出与审计」下载名单明细 CSV，交给券平台。
-  7. 14:00 门店只读角色登录，只能看到脱敏手机号，导出按钮置灰；直接调 `/api/exports/members.csv` 返回 403。
-  8. 次日 07:40 Celery worker 定时重算 RFM 并为进行中活动补一份名单，审计日志留痕。
+  6. 10:10 数据专员点「确认名单」：系统按分群冻结一份同口径对照组（约 10%，不触达、不进券平台名单），
+     管理员在「导出与审计」下载名单明细 CSV，交给券平台。
+  7. 10:30 券平台按天回传核销 / 订单分批，管理员在「名单与提升度」点「导入结算批次」：晚到批次只更新
+     「进行中」评估；把自然复购用对照组扣掉后，处理人数、对照人数、增量率、ROI 四个数字在页面与导出里一致。
+  8. 11:00 管理员点「结算并发布」，评估状态由「进行中」变「已发布」，数字锁定，之后再晚到的核销不再改动它。
+  9. 14:00 门店只读角色登录，只能看到脱敏手机号，导出按钮置灰；直接调 `/api/exports/members.csv` 返回 403。
+  10. 次日 07:40 Celery worker 定时重算 RFM 并为进行中活动补一份名单，审计日志留痕。
+      （补出来的新名单不会覆盖已发布评估；同一活动的历史名单各自持有冻结的对照组。）
 
 ## 2. 角色与权限
 
 | 角色 | 账号 | 权限 | 典型动作 |
 |---|---|---|---|
-| 会员运营管理员 `admin` | `admin@rfmseg.io` | 配置 + 重算 + 生成名单 + 导出 + 审计 | 调 RFM 权重/窗口、改分群券面额、生成名单、导出、看审计 |
-| 会员数据专员 `analyst` | `analyst@rfmseg.io` | 看分群与 lift、确认名单、导出 | 试算预算、确认名单、导出分群表 |
-| 门店业务只读 `viewer` | `viewer@rfmseg.io` | 只读列表与详情（手机号脱敏） | 看分群、看会员、看名单；写/导出/审计一律 403 |
+| 会员运营管理员 `admin` | `admin@rfmseg.io` | 配置 + 重算 + 生成名单 + 导入结算 + 发布评估 + 导出 + 审计 | 调 RFM 权重/窗口、改分群券面额、生成名单、导结算批次、发布评估、导出、看审计 |
+| 会员数据专员 `analyst` | `analyst@rfmseg.io` | 看分群与 lift、确认名单（自动冻结对照组）、看评估、导出 | 试算预算、确认名单、看增量率与 ROI、导出分群表与评估表 |
+| 门店业务只读 `viewer` | `viewer@rfmseg.io` | 只读列表与详情（手机号脱敏） | 看分群、看会员、看名单与已发布评估；写/导入/发布/导出/审计一律 403 |
 
 密码统一：`Demo@2026`。低权角色调用高权接口返回 **真实 HTTP 403**（`src/middlewares/rbac.py`，不靠前端隐藏）。
 未登录 401（`AUTH_MISSING`）、参数非法 422（`VALIDATION`）、重复自然键 409（`CONFLICT`）。
 
-## 3. 业务模块表（6 个）
+## 3. 业务模块表（7 个）
 
 | # | 模块 | 对应页面 | 主要 services / controller | 主要 API |
 |---|---|---|---|---|
@@ -43,7 +48,8 @@
 | ③ | 分群规则与券口径 | RFM 分群 `#/segments` | `segment_service` / `segment_controller` | `PATCH /api/segments/{id}` |
 | ④ | 名单生成（算法 B 落库） | 名单与提升度 `#/audiences` | `audience_service` / `audience_controller` | `POST /api/audiences`、`GET /api/audiences`、`PATCH /api/audiences/{id}/review` |
 | ⑤ | 提升度与预算分配（算法 B） | 名单与提升度 `#/audiences` | `lift_service`、`audience_service` / `campaign_controller` | `GET /api/campaigns`、`POST /api/campaigns`、`GET /api/campaigns/{id}/allocation` |
-| ⑥ | 导出与审计 | 导出与审计 `#/exports` | `export_service`、`audit_service` / `export_controller` | `GET /api/exports/{members,segments,audiences}.csv`、`GET /api/audit` |
+| ⑥ | 结算评估（算法 C，同口径对照组） | 名单与提升度 `#/audiences` | `evaluation_service` / `evaluation_controller` | `GET /api/evaluations?campaign_id=`、`GET /api/evaluations/{id}`、`POST /api/evaluations/import`、`POST /api/evaluations/{id}/publish` |
+| ⑦ | 导出与审计 | 导出与审计 `#/exports` | `export_service`、`audit_service` / `export_controller` | `GET /api/exports/{members,segments,audiences,evaluations}.csv`、`GET /api/audit` |
 
 横切能力（不计入业务模块）：JWT + 三角色 RBAC、限流（Redis 固定窗口，写接口单独额度）、审计中间件、worker 心跳。
 登录页与总览是横切入口，也不算业务模块。
@@ -143,6 +149,33 @@ docker-compose.yml  .env  README.md
    增量单量 = 增量人数 × `orders_per_converter`（默认 1.4）；增量 GMV = 增量单量 × 分群客单价（订单事实算出）。
 7. `ROI = 增量 GMV / 该群券预算`；整体 ROI = 总增量 GMV / 总花费。页面对每个分群展示这一整条推导。
 
+> **算法 B 的 lift 只是「投放前的预估」，不能当作出效果**：`p_s` 是历史券响应率，`p0` 是大盘历史购买率，
+> 自然复购本来就会发生的那部分也被算进了增量，于是预算会偏向「本来就会买的人」。
+> 真实效果必须由投放后的**算法 C（同口径对照组）**来回答。
+
+### 算法 C｜结算评估与同口径对照组（`backend/src/services/evaluation_service.py`）
+
+1. **冻结对照组**：确认名单时（`PATCH /api/audiences/{id}/review`）按分群把名单切成两组：
+   - 处理组 = 名单里实际投放的会员；
+   - 对照组 = 每个分群内按固定哈希抽取 `control_ratio`（默认 10%）的名单会员，**留出不触达**。
+   对照组与处理组同分群、同名单来源、同排序，因而同口径；冻结后不随分群重算、名单重生成而变化（`evaluations.audience_id` 唯一）。
+2. **对照组真的不触达**：`/api/exports/audiences.csv` 从券平台名单里剔除已冻结的对照组会员。
+3. **分批回流、幂等导入**：`POST /api/evaluations/import` 带 `batch_no`（同一活动 + 同批次号唯一）+ `as_of`（数据截止），
+   每行可带 `reached`（券是否送达）/ `redeemed` / `orders` / `gmv`。
+   - 同一批次重试：内容一致 → 返回 `duplicate=true`，不新增行、不重复累计；内容不一致 → 409；
+   - 同一会员多批回流：以 `as_of` 最新的记录为准；晚到批次只更新「进行中」评估；
+   - 已发布评估：该批次只计 `skipped`，任何数字都不改。
+4. **口径**（页面与导出共用同一份 `serialize`）：
+   - 处理组转化率 `p_t` = 处理组下单人数 / 有效触达人数（券没送达 `reached=false` 的人从分母剔除）；
+   - 对照组转化率 `p_c` = 对照组自然下单人数 / 对照组人数（对照组没有券，下单即自然复购）；
+   - **增量率 = `p_t − p_c`**，增量人数 = 有效触达人数 × 增量率；
+   - 增量单量 / 增量 GMV = 有效触达人数 ×（处理组人均 − 对照组人均），同样扣掉自然复购；
+   - ROI = 增量 GMV / 处理组实花（对照组不触达，成本按处理组占名单比例折算）。
+   - 对照组一条回流数据都没有时，增量率记 0，避免把处理组全部当增量。
+5. **状态机**：确认名单 → `in_progress`；`POST /api/evaluations/{id}/publish` → `published`，数字锁定。
+   页面和 `GET /api/exports/evaluations.csv` 都读这同一份处理人数、对照人数、增量率、ROI。
+6. 失败态：名单没有可投放会员 → 409；`control_ratio ∉ (0,1]` → 422；单批 > 5,000 行 → 422；同批次内容不一致 → 409。
+
 ### seed 数量口径（`SEED_SUMMARY`）
 
 `SEED_SUMMARY brand=rfmseg users=3 sources=8000 runs=30000 findings=8 pending=2`
@@ -153,7 +186,10 @@ docker-compose.yml  .env  README.md
 | `sources` | 会员数（8,000，32 万会员的 1/40 抽样） |
 | `runs` | 订单数（30,000） |
 | `findings` | RFM 分群数（8） |
-| `pending` | 待确认名单数（2，对应 2 个活动） |
+| `pending` | 待确认名单数（2，对应 2 个进行中的活动） |
+
+seed 额外准备了两份已确认的历史活动（中秋召回 / 国庆回访）各一份结算评估：
+中秋那份已发布（数字锁定），国庆那份进行中（可继续补导晚到批次）。它不改变 `SEED_SUMMARY` 的五个数字。
 
 ## 11. 共享枚举出现位置
 
@@ -164,6 +200,7 @@ docker-compose.yml  .env  README.md
 | 会员卡等级 `normal/silver/gold/black` | `backend/src/constants/enums.py` → `MemberTier` | `frontend/site/js/config.js` → `ENUMS.tier` |
 | 活动状态 `draft/active/closed` | `backend/src/constants/enums.py` → `CampaignStatus` | `frontend/site/js/config.js` → `ENUMS.campaignStatus` |
 | 名单状态 `pending/confirmed/pushed` | `backend/src/constants/enums.py` → `AudienceStatus` | `frontend/site/js/config.js` → `ENUMS.audienceStatus` |
+| 评估状态 `in_progress/published` | `backend/src/constants/enums.py` → `EvaluationStatus` | `frontend/site/js/config.js` → `ENUMS.evaluationStatus` |
 | 订单渠道 `miniapp/store/delivery` | `backend/src/constants/enums.py` → `OrderChannel` | `frontend/site/js/config.js` → `ENUMS.channel` |
 | 分配状态 `allocated/deferred/ineligible` | `backend/src/services/lift_service.py` | `frontend/site/js/config.js` → `ENUMS.allocationStatus` |
 

@@ -130,3 +130,60 @@ CREATE TABLE audit_logs (
     seed_key        VARCHAR(120) UNIQUE,
     created_at      TIMESTAMP    NOT NULL
 );
+
+-- 结算评估：确认名单时冻结同口径对照组，分批回流结算后发布
+CREATE TABLE evaluations (
+    id                  SERIAL PRIMARY KEY,
+    audience_id         INTEGER NOT NULL UNIQUE REFERENCES audiences(id) ON DELETE CASCADE,
+    campaign_id         INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    status              VARCHAR(16) NOT NULL DEFAULT 'in_progress',
+    control_ratio       DOUBLE PRECISION NOT NULL DEFAULT 0.1,
+    treated_count       INTEGER NOT NULL DEFAULT 0,
+    control_count       INTEGER NOT NULL DEFAULT 0,
+    treated_members     JSON,
+    control_members     JSON,
+    facts               JSON,
+    treated_redeemers   INTEGER NOT NULL DEFAULT 0,
+    control_redeemers   INTEGER NOT NULL DEFAULT 0,
+    treated_converters  INTEGER NOT NULL DEFAULT 0,
+    control_converters  INTEGER NOT NULL DEFAULT 0,
+    treated_gmv         DOUBLE PRECISION NOT NULL DEFAULT 0,
+    control_gmv         DOUBLE PRECISION NOT NULL DEFAULT 0,
+    treated_rate        DOUBLE PRECISION NOT NULL DEFAULT 0,
+    control_rate        DOUBLE PRECISION NOT NULL DEFAULT 0,
+    incremental_rate    DOUBLE PRECISION NOT NULL DEFAULT 0,
+    inc_converters      DOUBLE PRECISION NOT NULL DEFAULT 0,
+    inc_orders          INTEGER NOT NULL DEFAULT 0,
+    inc_gmv             DOUBLE PRECISION NOT NULL DEFAULT 0,
+    spend               DOUBLE PRECISION NOT NULL DEFAULT 0,
+    roi                 DOUBLE PRECISION NOT NULL DEFAULT 0,
+    treated_observed    INTEGER NOT NULL DEFAULT 0,
+    control_observed    INTEGER NOT NULL DEFAULT 0,
+    treated_reached     INTEGER NOT NULL DEFAULT 0,
+    control_reached     INTEGER NOT NULL DEFAULT 0,
+    batch_no            VARCHAR(64),
+    data_as_of          DATE,
+    published_at        TIMESTAMP,
+    published_by        VARCHAR(160),
+    seed_key            VARCHAR(120) UNIQUE,
+    created_at          TIMESTAMP NOT NULL,
+    updated_at          TIMESTAMP NOT NULL
+);
+CREATE INDEX ix_evaluations_campaign ON evaluations (campaign_id);
+CREATE INDEX ix_evaluations_status ON evaluations (status);
+
+-- 结算导入批次：同一活动 + 同批次号唯一，重试导入不新增、不重复应用
+CREATE TABLE evaluation_imports (
+    id              SERIAL PRIMARY KEY,
+    campaign_id     INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    batch_no        VARCHAR(64) NOT NULL,
+    checksum        VARCHAR(64) NOT NULL,
+    as_of           DATE,
+    rows_count      INTEGER NOT NULL DEFAULT 0,
+    applied         INTEGER NOT NULL DEFAULT 0,
+    skipped         INTEGER NOT NULL DEFAULT 0,
+    operator_email  VARCHAR(160) NOT NULL,
+    seed_key        VARCHAR(120) UNIQUE,
+    created_at      TIMESTAMP NOT NULL,
+    CONSTRAINT ux_evaluation_imports_batch UNIQUE (campaign_id, batch_no)
+);
