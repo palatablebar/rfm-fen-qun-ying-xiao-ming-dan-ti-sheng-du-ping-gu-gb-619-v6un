@@ -1,0 +1,53 @@
+/* 设计令牌：牧野茶饮「盖章会员卡」方向。
+   朱红（印章）+ 米白（宣纸）+ 茶墨（文字）+ 茶青（正向指标）；粗宋标题 + 无衬线正文。
+   规则：oklch() 色板；禁用纯黑纯白；双字体（display + body）；模块化字号。 */
+:root {
+  /* 纸与墨 */
+  --paper: oklch(0.964 0.016 88);
+  --paper-2: oklch(0.938 0.022 84);
+  --paper-3: oklch(0.902 0.028 80);
+  --ink: oklch(0.312 0.024 46);
+  --ink-soft: oklch(0.468 0.026 46);
+  --ink-faint: oklch(0.622 0.022 52);
+  --rule: oklch(0.848 0.024 76);
+  --rule-strong: oklch(0.722 0.032 70);
+
+  /* 朱红：印章 / 强调 */
+  --accent: oklch(0.546 0.186 30);
+  --accent-deep: oklch(0.442 0.158 28);
+  --accent-soft: oklch(0.646 0.148 34);
+  --accent-wash: oklch(0.934 0.046 40);
+  --seal: oklch(0.518 0.198 27);
+  --seal-wash: oklch(0.916 0.052 32);
+
+  /* 指标色 */
+  --ok: oklch(0.498 0.086 156);
+  --ok-wash: oklch(0.932 0.032 156);
+  --warn: oklch(0.702 0.128 76);
+  --warn-wash: oklch(0.946 0.042 84);
+  --danger: oklch(0.522 0.168 25);
+  --danger-wash: oklch(0.936 0.042 28);
+  --info: oklch(0.528 0.062 222);
+  --info-wash: oklch(0.94 0.022 222);
+
+  /* 双字体：粗宋标题 + 无衬线正文 */
+  --font-display: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+  --font-body: 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, monospace;
+
+  --fs-xs: 0.72rem;
+  --fs-sm: 0.82rem;
+  --fs-md: 0.95rem;
+  --fs-lg: 1.2rem;
+  --fs-xl: clamp(1.45rem, 2.1vw, 2.1rem);
+  --fs-2xl: clamp(2.1rem, 3.6vw, 3.4rem);
+
+  --pad: clamp(14px, 1.7vw, 30px);
+  --rail: 232px;
+  --radius: 12px;
+  --radius-sm: 7px;
+  --radius-pill: 999px;
+  --shadow: 0 1px 0 oklch(0.868 0.026 76), 0 22px 44px -36px oklch(0.36 0.03 48 / 0.6);
+  --shadow-card: 0 2px 0 oklch(0.9 0.03 70), 0 26px 50px -40px oklch(0.4 0.06 40 / 0.7);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
